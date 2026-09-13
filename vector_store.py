@@ -1,22 +1,22 @@
 """
 Vector storage and retrieval using ChromaDB (local, embedded -- no server needed)
-and sentence-transformers for embeddings (local, free, no API key).
+and Ollama's nomic-embed-text for embeddings (local, free, no API key, no torch
+dependency -- reuses the same Ollama service you already run for the LLM).
 """
 
 import chromadb
-from sentence_transformers import SentenceTransformer
+from langchain_ollama import OllamaEmbeddings
 
 from pdf_processor import Chunk
 
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # small, fast, good enough to start (~80MB download)
+EMBEDDING_MODEL = "nomic-embed-text"  # pull first: `ollama pull nomic-embed-text`
 DB_PATH = "./chroma_db"
 COLLECTION_NAME = "documents"
 
 
 class VectorStore:
     def __init__(self):
-        print(f"Loading embedding model '{EMBEDDING_MODEL}' (first run downloads it)...")
-        self.embedder = SentenceTransformer(EMBEDDING_MODEL)
+        self.embedder = OllamaEmbeddings(model=EMBEDDING_MODEL)
         self.client = chromadb.PersistentClient(path=DB_PATH)
         self.collection = self.client.get_or_create_collection(COLLECTION_NAME)
 
@@ -24,7 +24,7 @@ class VectorStore:
         if not chunks:
             return
         texts = [c.text for c in chunks]
-        embeddings = self.embedder.encode(texts, show_progress_bar=True).tolist()
+        embeddings = self.embedder.embed_documents(texts)
 
         self.collection.add(
             ids=[c.chunk_id for c in chunks],
@@ -38,9 +38,9 @@ class VectorStore:
         print(f"Stored {len(chunks)} chunks in vector DB.")
 
     def search(self, query: str, top_k: int = 4) -> list[dict]:
-        query_embedding = self.embedder.encode([query]).tolist()
+        query_embedding = self.embedder.embed_query(query)
         results = self.collection.query(
-            query_embeddings=query_embedding,
+            query_embeddings=[query_embedding],
             n_results=top_k,
         )
 

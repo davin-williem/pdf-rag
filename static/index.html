@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RAG Document Assistant</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
+  h1 { font-size: 1.4rem; }
+  section { margin-bottom: 28px; padding: 16px; border: 1px solid #ddd; border-radius: 8px; }
+  input[type="text"] { width: 70%; padding: 8px; font-size: 1rem; }
+  button { padding: 8px 16px; font-size: 1rem; cursor: pointer; }
+  #status { color: #666; font-size: 0.9rem; }
+  #answer { white-space: pre-wrap; background: #f7f7f7; padding: 12px; border-radius: 6px; margin-top: 12px; }
+  .source { font-size: 0.85rem; color: #444; margin-top: 4px; }
+  .loading { opacity: 0.6; }
+</style>
+</head>
+<body>
+  <h1>📚 RAG Document Assistant</h1>
+  <p id="status">Loading status...</p>
+
+  <section>
+    <h3>1. Upload a PDF</h3>
+    <input type="file" id="fileInput" accept="application/pdf">
+    <button onclick="uploadFile()">Upload</button>
+    <p id="uploadResult"></p>
+  </section>
+
+  <section>
+    <h3>2. Ask a question</h3>
+    <input type="text" id="questionInput" placeholder="What does the document say about...">
+    <button onclick="askQuestion()">Ask</button>
+    <div id="answer"></div>
+    <div id="sources"></div>
+  </section>
+
+<script>
+async function refreshStatus() {
+  const res = await fetch('/status');
+  const data = await res.json();
+  document.getElementById('status').textContent = `${data.chunks_stored} chunks stored`;
+}
+
+async function uploadFile() {
+  const input = document.getElementById('fileInput');
+  const resultEl = document.getElementById('uploadResult');
+  if (!input.files.length) { resultEl.textContent = 'Choose a PDF first.'; return; }
+
+  const formData = new FormData();
+  formData.append('file', input.files[0]);
+  resultEl.textContent = 'Uploading and processing...';
+
+  try {
+    const res = await fetch('/documents', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Upload failed');
+    resultEl.textContent = `Added ${data.chunks_added} chunks.`;
+    refreshStatus();
+  } catch (err) {
+    resultEl.textContent = `Error: ${err.message}`;
+  }
+}
+
+async function askQuestion() {
+  const question = document.getElementById('questionInput').value.trim();
+  const answerEl = document.getElementById('answer');
+  const sourcesEl = document.getElementById('sources');
+  if (!question) return;
+
+  answerEl.textContent = 'Thinking...';
+  answerEl.classList.add('loading');
+  sourcesEl.innerHTML = '';
+
+  try {
+    const res = await fetch('/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Request failed');
+
+    answerEl.textContent = data.answer;
+    answerEl.classList.remove('loading');
+
+    sourcesEl.innerHTML = '<strong>Sources:</strong>';
+    for (const s of data.sources) {
+      const div = document.createElement('div');
+      div.className = 'source';
+      div.textContent = `[${s.label}] ${s.source_file} -- page ${s.page_number} (relevance: ${s.relevance})`;
+      sourcesEl.appendChild(div);
+    }
+  } catch (err) {
+    answerEl.textContent = `Error: ${err.message}`;
+    answerEl.classList.remove('loading');
+  }
+}
+
+refreshStatus();
+</script>
+</body>
+</html>
